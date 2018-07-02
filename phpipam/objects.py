@@ -1,34 +1,52 @@
 import requests
-import json
-from exceptions import *
+from .exceptions import *
 
 class BaseIPAMObject:
 	_fields = []
-	endpoint = ''
+	_update_excluded = []
+	_endpoint = ''
 
 	def __init__(self, session):
 		self.session = session
-		self.endpoint = endpoint
 		self.__build_class__()
 
-	def create_object(self):
-		data = self.__get__parms()
-		response = requests.post(session.server+endpoint,params=json.dumps(data),headers={'phpipam-token':session.token})
+	def create(self):
+		data = self.__get_params__()
+		#no id needed for creating stuff
+		del data['id']
+		response = requests.post(session.server+self._endpoint,json=data,headers={'phpipam-token':self.session.token})
 
-	def get_object(self,id):
-		response = requests.get(session.server+self.endpoint+self.id,headers={'phpipam-token':session.token})
-		self.__set__params(response.json()['data'])
+	def __get_object__(self,obj_id):
+		response = requests.get(self.session.server+self._endpoint+obj_id+'/',headers={'phpipam-token':self.session.token})
+		if response.status_code != 200:
+			raise Exception('failed: '+response.json()['message'])
+		data = response.json()['data']
+		#if list take the first response
+		if type(data) == list:
+			self.__set_params__(response.json()['data'][0])
+		else:
+			self.__set_params__(response.json()['data'])
 
-	def update_object(self,endpoint):
-		response = requests.patch(session.server+endpoint,params=json.dumps(data),headers={'phpipam-token':session.token})
+	def update(self):
+		data = self.__get_params__()
+		response = requests.patch(self.session.server+self._endpoint+self.id+'/',json=data,headers={'phpipam-token':self.session.token})
+		if response.status_code != 201:
+			raise Exception('failed: '+response.json()['message'])
+	def delete(self):
+		response = requests.delete(self.session.server+self._endpoint+self.id+'/',headers={'phpipam-token':self.session.token})
 
-	def delete_object(self,endpoint):
-		response = requests.delete(session.server+endpoint,headers={'phpipam-token':session.token})
+	def __get_info__(self,uri, success_code):
+		response = requests.get(session.server+self._endpoint+self.id+'/'+uri+'/',headers={'phpipam-token':self.session.token})
+		#if response.status_code != 200:
+		#	raise someexception()
+		return response.json()
 
-	def __get__parms(self):
+	def __get_params__(self):
 		data = {}
 		for attr in self._fields:
-			if(getattr(self,attr) == True):
+			if attr in self._update_excluded:
+				pass
+			elif(getattr(self,attr) == True):
 				data[attr] = "1"
 			elif(getattr(self,attr) == False):
 				data[attr] = "0"
@@ -36,33 +54,62 @@ class BaseIPAMObject:
 				data[attr] = getattr(self,attr)
 		return data
 
-	def __set__params(self,data):
+	def __set_params__(self,data):
 		for attr in data.keys():
 			setattr(self,attr,data[attr])
 
 	def __build_class__(self):
 		for attribute in self._fields:
-			setattr(self,attribute,'')
+			setattr(self,attribute,None)
 
-	def __convert_permissions_(self,permissions):
+	def __convert_permissions__(self,permissions):
 		return permissions.split(':')
 
-	def __set_permissions(self,permissions):
+	def __set_permissions__(self,permissions):
 		return ':'.join(permissions)
 
 
 class Subnet(BaseIPAMObject):
 	_fields = ['id','subnet','mask','sectionID','description','linked_subnet','firewallAddressObject','vrfId',
 	'masterSubnetID','allowRequests','vlanId','showName','device','permissions','pingSubnet','discoverSubnet','resolveDNS',
-	'DNSrecrusive','DNSrecords','nameserverId','scanAgent','isFolder','isFull','tag','threshold','location','_editDate',
-	'lastScan','lastDiscovery']
-	endpoint = '/subnets/'
+	'DNSrecrusive','DNSrecords','nameserverId','scanAgent','isFolder','isFull','tag','threshold','location','editDate',
+	'lastScan','lastDiscovery','calculation']
+	_update_excluded = ['editDate','isFolder','subnet','calculation']
+	_endpoint = '/subnets/'
 
 	def __init__(self,session):
-		super().__init__()
+		super().__init__(session)
+
+	def get_by_cidr(self,cidr):
+		response = requests.get(self.session.server+self._endpoint+'cidr/'+cidr+'/',headers={'phpipam-token':self.session.token})
+		#if response.status_code != 200:
+		#	raise someexception()
+		self.__get_object__(response.json()['data'][0]['id'])
+
+	def get_next_ip(self):
+		#have this create a new address and return the Address object
+		info = self.__get_info__('first_free')
+		if 'data' not in info.keys():
+			raise Exception('Subnet out of Addresses')
+		return info['data']
 
 class Address(BaseIPAMObject):
-	pass
+	_fields = ['id','subnetID','ip','is_gateway','description','hostname','mac','owner','tag','deviceID','location','port','note',
+	'lastSeen','excludePing','PTRIgnore','PTR','firewallAddressObject','editDate']
+	_endpoint = '/addresses/'
+
+	def __init__(self, session):
+		super().__init__(session)
+
+	def ping(self):
+		response = self.__get_info__('ping')
+		if response.status_code != 200:
+			if 'message' in response.keys():
+				raise Exception(response['message'])
+			else:
+				raise Exception('Uknown error')
+		return info['data']['result_code']
+
 
 class VRF(BaseIPAMObject):
 	pass
