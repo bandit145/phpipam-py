@@ -41,7 +41,11 @@ class TestSubnetObject(unittest.TestCase):
 		subnet.get_by_cidr('10.10.1.0/24')
 		self.assertEqual(subnet.id,"3")
 		subnet.description = "edited"
-		subnet.update()
+		subnet.update(vlan_tagged=False,vrf_tagged=False)
+		#verify update
+		subnet = Subnet(session)
+		subnet.get_by_cidr('10.10.1.0/24')
+		self.assertEqual(subnet.description,"edited")
 
 class TestAddressObject(unittest.TestCase):
 
@@ -51,6 +55,13 @@ class TestAddressObject(unittest.TestCase):
 		address.__get_object__("1")
 		self.assertEqual(address.ip,"10.10.1.3")
 		address.delete()
+		#create object
+		address.create()
+		#verify that it is recreated
+		address = Address(session)
+		address.__get_object__("11")
+		self.assertEqual(address.ip,"10.10.1.3")
+
 
 if __name__ == '__main__':
 	unittest.main()
